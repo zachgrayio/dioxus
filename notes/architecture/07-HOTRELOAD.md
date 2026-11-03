@@ -63,6 +63,11 @@ TLS presents challenges for hot-patching:
 - **Web**: WASM32 (limited module reloading)
 - **Not supported**: iOS device (code-signing)
 
+Windows x64 hotpatch stubs must preserve registers: compiler stack probes pass their allocation
+size in RAX to `__chkstk`. Use a RIP-relative indirect jump with an embedded target address;
+loading the destination into RAX corrupts that size and causes a stack overflow. The CLI's
+synthetic COFF regression runs on any host and checks the jump and ASLR-adjusted destination.
+
 ## RSX Hot Reload
 
 ### Hot Literal System

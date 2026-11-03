@@ -1199,6 +1199,15 @@ impl BuildRequest {
         // Stream the tip's source-file list so the runner can extend its filemap / watch set
         // before this build is even bundled.
         ctx.status_dep_info_discovered(depinfo.files.clone());
+        // The executable's .d does not include sources included by workspace libraries.
+        // Seed those now as well, so generated include! files are known before the first patch.
+        for args in workspace_rustc_args.rustc_args.values() {
+            if let Some(path) = super::link::dep_info_path_for_rustc_args(&args.args) {
+                if let Ok(info) = RustcDepInfo::from_file(&path) {
+                    ctx.status_dep_info_discovered(info.canonicalize(args.cwd.clone()).files);
+                }
+            }
+        }
 
         Ok(BuildArtifacts {
             time_end,

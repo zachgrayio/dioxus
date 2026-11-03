@@ -68,6 +68,8 @@ dependency artifacts. Hotpatch build-status messages cover replay as well as the
 reported patch duration includes replay, linking and post-processing.
 Windows thin links retain `.dll.lib` import libraries so dynamically linked engines share
 their existing DLL data and interners with patches instead of losing IAT symbols.
+Initial builds seed include-file tracking from every captured workspace crate's dep-info,
+not only the executable. Explicit watcher paths can then cover generated includes outside src/.
 
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build

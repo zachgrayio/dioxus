@@ -70,6 +70,9 @@ Windows thin links retain `.dll.lib` import libraries so dynamically linked engi
 their existing DLL data and interners with patches instead of losing IAT symbols.
 Initial builds seed include-file tracking from every captured workspace crate's dep-info,
 not only the executable. Explicit watcher paths can then cover generated includes outside src/.
+Native hosts may set `DX_PRE_PATCH_COMMAND` to a JSON argv array for fast preparation before
+workspace replay (no shell), and `DX_WATCH_IGNORE_PREFIXES` to absolute path prefixes whose
+content is watched independently by the native engine. Defaults preserve ordinary DX behavior.
 
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build

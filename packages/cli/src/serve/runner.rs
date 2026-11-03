@@ -339,6 +339,14 @@ impl AppServer {
             event = watcher_wait => {
                 let mut changes: Vec<_> = event.into_iter().collect();
 
+                // Coalesce one editor save across files before starting an expensive replay.
+                // A fixed short batch window avoids a second patch for the same save; this is
+                // not a quiet-period loop and never extends when further events arrive.
+                let deadline = tokio::time::Instant::now() + Duration::from_millis(25);
+                while let Ok(Some(event)) = tokio::time::timeout_at(deadline, self.watcher_rx.next()).await {
+                    changes.push(event);
+                }
+
                 // Dequeue in bulk if we can, we might've received a lot of events in one go
                 while let Ok(event) = self.watcher_rx.try_recv() {
                     changes.push(event);

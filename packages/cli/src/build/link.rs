@@ -134,6 +134,22 @@ impl BuildRequest {
     /// some are experimental, and each has their own syntax ie `-C, /C, --C, C=` which need to be handlded.
     pub async fn compile_workspace_hotpatch(&self, ctx: &BuildContext) -> Result<BuildArtifacts> {
         let patch_started = SystemTime::now();
+        // Optional native host preparation: structured argv, never interpreted by a shell.
+        // It runs before replay so generated includes describe this patch, not the next one.
+        if let Ok(command) = std::env::var("DX_PRE_PATCH_COMMAND") {
+            let argv: Vec<String> = serde_json::from_str(&command)
+                .context("DX_PRE_PATCH_COMMAND must be a JSON argv array")?;
+            let (program, args) = argv
+                .split_first()
+                .context("DX_PRE_PATCH_COMMAND is empty")?;
+            let status = Command::new(program)
+                .args(args)
+                .current_dir(self.workspace_dir())
+                .env_remove("DX_PRE_PATCH_COMMAND")
+                .status()
+                .await?;
+            ensure!(status.success(), "Pre-patch preparation failed: {status}");
+        }
         let BuildMode::Thin {
             aslr_reference,
             workspace_rustc_args,

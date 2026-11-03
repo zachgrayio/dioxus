@@ -50,6 +50,7 @@ pub(crate) struct AppServer {
     pub(crate) watcher: Box<dyn notify::Watcher>,
     pub(crate) _watcher_tx: UnboundedSender<notify::Event>,
     pub(crate) watcher_rx: UnboundedReceiver<notify::Event>,
+    watch_ignored_paths: Vec<PathBuf>,
 
     // Tracked state related to open builds and hot reloading
     pub(crate) applied_client_hot_reload_message: HotReloadMsg,
@@ -183,6 +184,12 @@ impl AppServer {
             .flatten();
 
         let watch_fs = args.watch.unwrap_or(true);
+        let watch_ignored_paths: Vec<PathBuf> = std::env::var("DX_WATCH_IGNORE_PREFIXES")
+            .ok()
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .context("DX_WATCH_IGNORE_PREFIXES must be a JSON path array")?
+            .unwrap_or_default();
         let hotreload_mode = if args.hot_patch.unwrap_or(true) {
             HotReloadMode::Hotpatch
         } else {
@@ -220,6 +227,7 @@ impl AppServer {
             proxied_port,
             watcher,
             watcher_rx,
+            watch_ignored_paths,
             _watcher_tx: watcher_tx,
             interactive,
             _force_sequential: force_sequential,
@@ -1264,6 +1272,13 @@ impl AppServer {
                 let Ok(entry) = entry else {
                     continue;
                 };
+                if self
+                    .watch_ignored_paths
+                    .iter()
+                    .any(|path| entry.path().starts_with(path))
+                {
+                    continue;
+                }
 
                 if ignore
                     .matched(entry.path(), entry.path().is_dir())

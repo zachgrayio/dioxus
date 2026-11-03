@@ -471,6 +471,10 @@ impl BuildRequest {
             }
 
             LinkerFlavor::Msvc => {
+                // DLL data imports have no direct symbol in the executable's PDB.
+                // Retain Rust's import libraries so the patch loader binds their IAT
+                // to the same already-loaded engine DLL (not a second static engine).
+                out_args.extend(windows_import_libraries(original_args).cloned());
                 out_args.extend([
                     "shlwapi.lib".to_string(),
                     "kernel32.lib".to_string(),
@@ -1560,4 +1564,26 @@ fn dep_info_path_for_rustc_args(args: &[String]) -> Option<PathBuf> {
     let out_dir = out_dir?;
     let crate_name = crate_name?;
     Some(PathBuf::from(out_dir).join(format!("{crate_name}{extra}.d")))
+}
+
+fn windows_import_libraries(args: &[String]) -> impl Iterator<Item = &String> {
+    args.iter().filter(|arg| arg.ends_with(".dll.lib"))
+}
+
+#[test]
+fn thin_windows_link_retains_dll_imports_without_static_dependencies() {
+    let args = [
+        "game.rcgu.o",
+        "libgame.rlib",
+        "libbevy_dylib-hash.dll.lib",
+        "native_static.lib",
+        "std-hash.dll.lib",
+    ]
+    .map(str::to_owned);
+    assert_eq!(
+        windows_import_libraries(&args)
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["libbevy_dylib-hash.dll.lib", "std-hash.dll.lib"]
+    );
 }

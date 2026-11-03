@@ -133,6 +133,7 @@ impl BuildRequest {
     /// We need to be careful about which linker we're interpreting too. Some are old, some are new,
     /// some are experimental, and each has their own syntax ie `-C, /C, --C, C=` which need to be handlded.
     pub async fn compile_workspace_hotpatch(&self, ctx: &BuildContext) -> Result<BuildArtifacts> {
+        let patch_started = SystemTime::now();
         let BuildMode::Thin {
             aslr_reference,
             workspace_rustc_args,
@@ -163,6 +164,7 @@ impl BuildRequest {
 
         // Recompile just the tip crate now
         let mut artifacts = self.cargo_build(ctx).await?;
+        artifacts.time_start = patch_started;
 
         ctx.status_writing_patch();
         ctx.profile_phase("Patch: Cache Tip Objects");
@@ -335,6 +337,7 @@ impl BuildRequest {
         self.write_index_html(&artifacts.assets)
             .context("Failed to write index.html")?;
 
+        artifacts.time_end = SystemTime::now();
         Ok(artifacts)
     }
 

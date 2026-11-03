@@ -1519,7 +1519,7 @@ impl BuildRequest {
 /// Reconstruct the dep-info `.d` path that rustc will write for an invocation, by parsing the
 /// `--out-dir`, `--crate-name`, and `-C extra-filename=` from the captured args. This mirrors
 /// rustc's own naming convention: `<out_dir>/<crate_name><extra_filename>.d`.
-fn dep_info_path_for_rustc_args(args: &[String]) -> Option<PathBuf> {
+pub(crate) fn dep_info_path_for_rustc_args(args: &[String]) -> Option<PathBuf> {
     let mut out_dir: Option<&str> = None;
     let mut crate_name: Option<&str> = None;
     let mut extra: String = String::new();

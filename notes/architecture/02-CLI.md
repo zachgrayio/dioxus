@@ -73,6 +73,8 @@ not only the executable. Explicit watcher paths can then cover generated include
 Native hosts may set `DX_PRE_PATCH_COMMAND` to a JSON argv array for fast preparation before
 workspace replay (no shell), and `DX_WATCH_IGNORE_PREFIXES` to absolute path prefixes whose
 content is watched independently by the native engine. Defaults preserve ordinary DX behavior.
+Filesystem notifications use a bounded 25 ms batch window so one multi-file save starts one
+workspace replay, rather than queueing another whole patch while the first compiler starts.
 
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build

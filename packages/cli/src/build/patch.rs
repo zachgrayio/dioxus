@@ -1027,14 +1027,10 @@ pub fn create_undefined_symbol_stub(
                     // The windows ABI and calling convention is different than the SystemV ABI.
                     OperatingSystem::Windows => match triple.architecture {
                         Architecture::X86_64 => {
-                            // Windows x64 has specific requirements for alignment and position-independent code
-                            let mut code = vec![
-                                0x48, 0xB8, // movabs RAX, imm64 (move 64-bit immediate to RAX)
-                            ];
-                            // Append the absolute 64-bit address
+                            // Preserve registers: __chkstk receives the stack size in RAX.
+                            // jmp qword ptr [rip + 0], followed by the target address.
+                            let mut code = vec![0xFF, 0x25, 0, 0, 0, 0];
                             code.extend_from_slice(&abs_addr.to_le_bytes());
-                            // jmp RAX (jump to the address in RAX)
-                            code.extend_from_slice(&[0xFF, 0xE0]);
                             code
                         }
                         Architecture::X86_32(_) => {
@@ -1270,6 +1266,59 @@ pub fn create_undefined_symbol_stub(
     }
 
     Ok(obj.write()?)
+}
+
+#[test]
+fn windows_x64_stack_probe_stub_preserves_registers_and_applies_aslr() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let input = directory.path().join("stack-probe.o");
+    let mut object = object::write::Object::new(
+        object::BinaryFormat::Coff,
+        object::Architecture::X86_64,
+        Endianness::Little,
+    );
+    object.add_symbol(Symbol {
+        name: b"__chkstk".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Undefined,
+        flags: SymbolFlags::None,
+    });
+    std::fs::write(&input, object.write()?)?;
+
+    let mut cache = HotpatchModuleCache::default();
+    for (name, address) in [("main", 0x1000), ("__chkstk", 0x2500)] {
+        cache.symbol_table.insert(
+            name.to_owned(),
+            CachedSymbol {
+                address,
+                kind: SymbolKind::Text,
+                is_undefined: false,
+                is_weak: false,
+                size: 0,
+                flags: SymbolFlags::None,
+            },
+        );
+    }
+    let triple = "x86_64-pc-windows-msvc".parse()?;
+    let bytes = create_undefined_symbol_stub(&cache, &[input], &triple, 0x140001000)?;
+    let stub = object::File::parse(bytes.as_slice())?;
+    let symbol = stub
+        .symbol_by_name("__chkstk")
+        .context("Missing stack-probe stub")?;
+    let section = stub.section_by_index(symbol.section_index().context("Missing text section")?)?;
+    let data = section.data()?;
+    let code = &data[symbol.address() as usize..];
+
+    // FF /4 with RIP-relative addressing jumps through memory without touching RAX,
+    // which carries the requested allocation size into __chkstk.
+    assert_eq!(&code[..6], &[0xff, 0x25, 0, 0, 0, 0]);
+    let destination = u64::from_le_bytes(code[6..14].try_into()?);
+    assert_eq!(destination, 0x140002500);
+    Ok(())
 }
 
 fn collect_stub_symbols_from_path(

@@ -52,7 +52,9 @@ TLS presents challenges for hot-patching:
 
 1. **Struct changes**: Not supported - size/alignment changes cause crashes
 2. **Pointer versioning**: Not implemented - all function pointers considered "new"
-3. **Workspace support**: Only tip crate patches, library crates ignored
+3. **Workspace support**: This fork replays changed workspace libraries and their dependents,
+   including a package library used by its binary. Warm libraries missing captured compiler
+   arguments are recompiled once; Cargo package hyphens and rustc crate underscores are normalized.
 4. **Static initializers**: Changes not observed
 5. **Global destructors**: Newly added globals have destructors that never run
 

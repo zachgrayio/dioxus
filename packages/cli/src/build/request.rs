@@ -1292,10 +1292,8 @@ impl BuildRequest {
             .flatten()
         {
             if let Some(fname) = entry.file_name().to_str() {
-                if let Some((name, _)) = fname.rsplit_once('-') {
-                    if bust.contains(name) {
-                        _ = std::fs::remove_dir_all(entry.path());
-                    }
+                if fingerprint_selected(fname, &bust) {
+                    _ = std::fs::remove_dir_all(entry.path());
                 }
             }
         }
@@ -3184,5 +3182,26 @@ impl BuildRequest {
         }
 
         deps
+    }
+}
+
+fn fingerprint_selected(directory: &str, crates: &HashSet<String>) -> bool {
+    directory.rsplit_once('-').is_some_and(|(package, _)| {
+        // Cargo fingerprints retain package hyphens; captured rustc crate names use underscores.
+        crates.contains(package) || crates.contains(&package.replace('-', "_"))
+    })
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn warm_workspace_libraries_with_hyphenated_packages_recapture_missing_arguments() {
+        let selected = HashSet::from(["bard_core".to_string(), "my-app".to_string()]);
+        assert!(fingerprint_selected("bard-core-a1b2c3", &selected));
+        assert!(fingerprint_selected("my-app-d4e5f6", &selected));
+        assert!(!fingerprint_selected("bevy-123abc", &selected));
+        assert!(!fingerprint_selected("malformed", &selected));
     }
 }

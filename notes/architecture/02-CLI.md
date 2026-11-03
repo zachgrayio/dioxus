@@ -66,6 +66,8 @@ Explicit Cargo built-in profiles must not receive `inherits`; their artifact dir
 Cargo's `debug`/`release` mapping. This allows development hosts and ordinary tests to reuse
 dependency artifacts. Hotpatch build-status messages cover replay as well as the tip build;
 reported patch duration includes replay, linking and post-processing.
+Windows thin links retain `.dll.lib` import libraries so dynamically linked engines share
+their existing DLL data and interners with patches instead of losing IAT symbols.
 
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build

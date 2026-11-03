@@ -62,6 +62,11 @@ Responsible for:
 - Writing platform-specific metadata (Info.plist, AndroidManifest.xml)
 - Platform-specific linking (Android uses dx as opaque linker, hotpatching uses custom linker)
 
+Explicit Cargo built-in profiles must not receive `inherits`; their artifact directories follow
+Cargo's `debug`/`release` mapping. This allows development hosts and ordinary tests to reuse
+dependency artifacts. Hotpatch build-status messages cover replay as well as the tip build;
+reported patch duration includes replay, linking and post-processing.
+
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build
 - `Fat` - Full build with all symbols for hot-patching

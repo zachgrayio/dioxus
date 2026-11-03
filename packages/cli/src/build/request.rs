@@ -3082,12 +3082,13 @@ impl BuildRequest {
         args.push(format!(r#"profile.{profile}.strip=false"#));
 
         // If the user defined the profile in the Cargo.toml, we don't need to add it to our adhoc list
-        if !self
-            .workspace
-            .cargo_toml
-            .profile
-            .custom
-            .contains_key(&self.profile)
+        if !matches!(profile, "dev" | "release" | "test" | "bench")
+            && !self
+                .workspace
+                .cargo_toml
+                .profile
+                .custom
+                .contains_key(&self.profile)
         {
             // Otherwise, we need to add the profile arguments to make it adhoc
             let inherits = if self.release { "release" } else { "dev" };
@@ -3117,9 +3118,14 @@ impl BuildRequest {
     }
 
     fn cargo_fingerprint_dir(&self) -> PathBuf {
+        let directory = match self.profile.as_str() {
+            "dev" | "test" => "debug",
+            "bench" => "release",
+            profile => profile,
+        };
         self.target_dir
             .join(self.triple.to_string())
-            .join(&self.profile)
+            .join(directory)
             .join(".fingerprint")
     }
 

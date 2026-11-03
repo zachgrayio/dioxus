@@ -319,6 +319,7 @@ impl WebServer {
 
     /// Tells all clients that a hot patch has started.
     pub(crate) async fn send_patch_start(&mut self) {
+        self.start_build().await;
         self.send_devserver_message_to_all(DevserverMsg::HotPatchStart)
             .await;
     }

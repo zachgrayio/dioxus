@@ -75,6 +75,10 @@ workspace replay (no shell), and `DX_WATCH_IGNORE_PREFIXES` to absolute path pre
 content is watched independently by the native engine. Defaults preserve ordinary DX behavior.
 Filesystem notifications use a bounded 25 ms batch window so one multi-file save starts one
 workspace replay, rather than queueing another whole patch while the first compiler starts.
+Recursive watches ignore editor backup/JetBrains temporary files and directory write-time noise;
+actual input-file changes and structural directory events remain eligible. Paths are deduplicated
+before dispatch. Unchanged Rust content is skipped, and all changed Rust snapshots in a batch are
+recorded before replay so queued duplicate notifications cannot request the same patch again.
 
 ### BuildMode Enum
 - `Base { run: bool }` - Normal cargo rustc build

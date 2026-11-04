@@ -367,12 +367,20 @@ impl AppServer {
                     }
 
                     for path in event.paths {
+                        let metadata = std::fs::metadata(&path).ok();
+                        let directory = metadata.as_ref().is_some_and(|metadata| metadata.is_dir())
+                            || self.file_map.keys().any(|source| {
+                                source != &path && source.starts_with(&path)
+                            });
+                        if !relevant_editor_event(&event.kind, &path, directory) {
+                            continue;
+                        }
                         // Workaround for notify and vscode-like editor:
                         // - when edit & save a file in vscode, there will be two notifications,
                         // - the first one is a file with empty content.
                         // - filter the empty file notification to avoid false rebuild during hot-reload
-                        if let Ok(metadata) = std::fs::metadata(&path) {
-                            if metadata.len() == 0 {
+                        if let Some(metadata) = metadata {
+                            if metadata.is_file() && metadata.len() == 0 {
                                 continue;
                             }
                         }
@@ -381,6 +389,8 @@ impl AppServer {
                     }
                 }
 
+                files.sort_unstable();
+                files.dedup();
                 ServeUpdate::FilesChanged { files }
             }
 
@@ -493,6 +503,15 @@ impl AppServer {
                     continue;
                 };
 
+                if cached_file
+                    .most_recent
+                    .as_deref()
+                    .unwrap_or(&cached_file.contents)
+                    == new_contents
+                {
+                    continue;
+                }
+
                 let Ok(local_path) = path.strip_prefix(self.workspace.workspace_root()) else {
                     tracing::debug!("Skipping file outside workspace dir: {:?}", path);
                     continue;
@@ -512,7 +531,7 @@ impl AppServer {
                 // This assumes the two files are structured similarly. If they're not, we can't diff them
                 let Some(changed_rsx) = dioxus_rsx_hotreload::diff_rsx(&new_file, &old_file) else {
                     needs_rust_rebuild = true;
-                    break;
+                    continue;
                 };
 
                 for ChangedRsx { old, new } in changed_rsx {
@@ -576,7 +595,7 @@ impl AppServer {
                     // Check if the path is directly in depinfo
                     if artifacts.depinfo.files.contains(path) {
                         needs_rust_rebuild = true;
-                        break;
+                        continue;
                     }
                     // Also check if the path is under a directory that's in depinfo
                     // (for directories added via cargo:rerun-if-changed=dir)
@@ -587,7 +606,7 @@ impl AppServer {
                         }
                     }
                     if needs_rust_rebuild {
-                        break;
+                        continue;
                     }
                 }
             }
@@ -1835,6 +1854,97 @@ fn get_available_port(address: IpAddr, prefer: Option<u16>) -> Option<u16> {
     TcpListener::bind((address, 0))
         .and_then(|listener| listener.local_addr().map(|f| f.port()))
         .ok()
+}
+
+// Recursive source watches also receive backup files and directory write-time events from
+// atomic editor saves. Neither is a new build input. Keep actual directory creation/removal/
+// renaming and every ordinary input-file event so generated/include inputs retain their behavior.
+fn relevant_editor_event(kind: &EventKind, path: &Path, directory: bool) -> bool {
+    if let Some(name) = path.file_name().and_then(|name| name.to_str())
+        && (name.ends_with('~') || name.ends_with("___jb_tmp___") || name.ends_with("___jb_old___"))
+    {
+        return false;
+    }
+    !(directory
+        && matches!(
+            kind,
+            EventKind::Modify(ModifyKind::Any | ModifyKind::Metadata(_))
+        ))
+}
+
+#[cfg(test)]
+mod editor_save_tests {
+    use super::*;
+    use notify::event::{CreateKind, DataChange, RemoveKind, RenameMode};
+
+    #[test]
+    fn editor_save_keeps_only_real_source_notifications() {
+        let paths = [
+            ("src/tuning/party_hud.rs~", false),
+            ("src/tuning/party_hud.rs.___jb_tmp___", false),
+            ("src/tuning/party_hud.rs.___jb_old___", false),
+            ("src/tuning", true),
+            ("src/tuning/party_hud.rs", false),
+        ];
+        let actual: Vec<_> = paths
+            .into_iter()
+            .filter_map(|(path, directory)| {
+                relevant_editor_event(
+                    &EventKind::Modify(ModifyKind::Any),
+                    Path::new(path),
+                    directory,
+                )
+                .then_some(path)
+            })
+            .collect();
+        assert_eq!(actual, ["src/tuning/party_hud.rs"]);
+    }
+
+    #[test]
+    fn editor_save_preserves_file_changes_and_structural_directory_events() {
+        for kind in [
+            EventKind::Create(CreateKind::Folder),
+            EventKind::Remove(RemoveKind::Folder),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+        ] {
+            assert!(relevant_editor_event(
+                &kind,
+                Path::new("src/generated"),
+                true
+            ));
+        }
+        for path in [
+            "src/input.rs",
+            "src/config.json",
+            "assets/style.css",
+            "Cargo.toml",
+        ] {
+            assert!(relevant_editor_event(
+                &EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                Path::new(path),
+                false
+            ));
+            assert!(relevant_editor_event(
+                &EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+                Path::new(path),
+                false
+            ));
+        }
+    }
+
+    #[test]
+    fn editor_save_directory_timestamp_is_not_an_include_directory_content_change() {
+        assert!(!relevant_editor_event(
+            &EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime)),
+            Path::new("src/tuning"),
+            true
+        ));
+        assert!(relevant_editor_event(
+            &EventKind::Remove(RemoveKind::File),
+            Path::new("src/tuning/removed.rs"),
+            false
+        ));
+    }
 }
 
 fn create_notify_watcher(
